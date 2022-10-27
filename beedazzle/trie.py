@@ -4,7 +4,6 @@ MINIMUM_SCORE = -2
 
 
 class DoesNotExistError(Exception):
-    """"""
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
@@ -13,6 +12,7 @@ class Node:
     root = False
     children = {}
     symbol = None
+    data = None
 
     def __str__(self) -> str:
         return self.symbol
@@ -30,13 +30,13 @@ class Node:
             else:
                 self.symbol = symbol.lower()
         self.children = {}
-        self.score = score
+        self.data = score
 
     def add(self, input_str: str, score: int = 0):
         """Processes word into trie nodes"""
         if input_str == "":
             self.children["*"] = None
-            self.score = score
+            self.data = score
             return
         char = input_str[0]
         next_node = self.children.get(char)
@@ -49,7 +49,7 @@ class Node:
         """Checks if input_str is in trie"""
         if input_str == "":
             if "*" in self.children:
-                return self.score
+                return True
             else:
                 return False
         char = input_str[0]
@@ -63,7 +63,7 @@ class Node:
     def adjust_word_score(self, stem, adjustment):
         """Adjust the score for an entry"""
         if stem == "":
-            self.score += adjustment
+            self.data += adjustment
             return
         char = stem[0]
         next_node = self.children.get(char)
@@ -87,13 +87,67 @@ class Node:
 
         return found_words
 
-    def export(self, stem):
+    def find_words_of_edit_distance(self, input_str, edit_dist, stem=""):
+        found_words = set()
+
+        if edit_dist == 0:
+            full_word = stem + input_str
+            if self.check(input_str):
+                return {full_word}
+            else:
+                return found_words
+
+
+        # Insertion
+        for child in self.children.keys():
+            if child == "*":
+                continue
+            child_node = self.children.get(child)
+            insertion_words = child_node.find_words_of_edit_distance(input_str, edit_dist-1, stem + child)
+            found_words = found_words.union(insertion_words)
+
+        # Deletion
+        if len(input_str) >= 1:
+            try:
+                next_char = input_str[1]
+            except IndexError:
+                if self.check(""):
+                    found_words.add(stem)
+            else:
+                if next_char in self.children:
+                    child_node = self.children.get(next_char)
+                    deletion_words = child_node.find_words_of_edit_distance(input_str[2:], edit_dist-1, stem + next_char)
+                    found_words = found_words.union(deletion_words)
+
+        
+        # Subsitution
+        if len(input_str) >= 1:
+            for child in self.children.keys():
+                if child == "*":
+                    continue
+                child_node = self.children.get(child)
+                substitution_words = child_node.find_words_of_edit_distance(input_str[1:], edit_dist-1, stem + child)
+                found_words = found_words.union(substitution_words)
+
+        try:
+            char = input_str[0]
+        except IndexError:
+            return found_words
+
+        if char in self.children:
+            child_node = self.children.get(char)
+            next_letter_words = child_node.find_words_of_edit_distance(input_str[1:], edit_dist, stem + char)
+            return found_words.union(next_letter_words)
+        else:
+            return found_words
+
+    def export(self, stem=""):
         """Returns a dictionary of all words in the branch and their scores"""
         found_words = {}
         for char, node in self.children.items():
             if char == "*":
-                if self.score >= MINIMUM_SCORE:
-                    found_words[stem] = self.score
+                if self.data >= MINIMUM_SCORE:
+                    found_words[stem] = self.data
                 continue
             else:
                 child_word_dict = node.export(stem + char)
@@ -129,17 +183,20 @@ class Trie:
         """Checks if structure contains input word"""
         pass
 
-    def add(self, input_str, score: int = 0):
+    def add_word(self, input_str, score: int = 0):
         """Adds word to Trie"""
         self.root.add(input_str, score)
 
-    def check(self, input_str):
+    def check_for_word(self, input_str):
         """Checks trie for input string"""
         return self.root.check(input_str)
+    
+    def find_words_of_edit_distance(self, input_str, edit_dist):
+        return self.root.find_words_of_edit_distance(input_str, edit_dist, stem="")
 
     def dump(self):
-        """Returns list of words in the trie"""
-        return self.root.dump("")
+        """Returns dictionary of all words in trie keyed on the word with data values"""
+        return self.root.dump()
 
     def accept_word(self, word):
         """Increments score of accepted word"""
@@ -208,8 +265,8 @@ class Trie:
         with open(filename) as fd:
             for line in fd:
                 word = line.strip()
-                if len(word) > 3:
-                    self.add(word)
+                # if len(word) > 3:
+                self.add_word(word)
 
     def import_from_json_file(self, filename):
         try:
@@ -217,7 +274,7 @@ class Trie:
                 data = fd.read()
                 trie_dict = json.loads(data)
                 for word, score in trie_dict.items():
-                    self.add(word, score=score)
+                    self.add_word(word, score=score)
         except FileNotFoundError:
             pass
 

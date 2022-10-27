@@ -1,2 +1,5 @@
 build/
 Beedazzle.egg-info
+*.pyc
+.vscode/
+words.json
